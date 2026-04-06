@@ -1,97 +1,70 @@
 import java.util.*;
-import java.util.concurrent.*;
 
 /**
- * DNS Resolver Cache with TTL
+ * Plagiarism Detection System
  * Version: 1.0
  *
  * Features:
- * - Stores domain → IP mappings
- * - TTL-based expiration
- * - LRU eviction when cache is full
- * - Hit/miss statistics
+ * - Breaks documents into n-grams
+ * - Maps n-grams to documents using HashMap
+ * - Calculates similarity percentages
+ * - Detects potential plagiarism
  */
 
-class DNSEntry {
-    String domain;
-    String ipAddress;
-    long expiryTime;
+class PlagiarismDetector {
 
-    public DNSEntry(String domain, String ipAddress, int ttlSeconds) {
-        this.domain = domain;
-        this.ipAddress = ipAddress;
-        this.expiryTime = System.currentTimeMillis() + ttlSeconds * 1000L;
+    private int nGramSize;
+    private Map<String, Set<String>> nGramMap; // n-gram -> document IDs
+
+    public PlagiarismDetector(int nGramSize) {
+        this.nGramSize = nGramSize;
+        nGramMap = new HashMap<>();
     }
 
-    public boolean isExpired() {
-        return System.currentTimeMillis() > expiryTime;
-    }
-}
-
-class DNSCache {
-
-    private final int capacity;
-    private LinkedHashMap<String, DNSEntry> cache;
-    private int hits = 0;
-    private int misses = 0;
-
-    public DNSCache(int capacity) {
-        this.capacity = capacity;
-
-        // accessOrder=true enables LRU eviction
-        cache = new LinkedHashMap<String, DNSEntry>(capacity, 0.75f, true) {
-            protected boolean removeEldestEntry(Map.Entry<String, DNSEntry> eldest) {
-                return size() > DNSCache.this.capacity;
+    // Extract n-grams from document
+    private List<String> extractNGrams(String content) {
+        String[] words = content.split("\\s+");
+        List<String> nGrams = new ArrayList<>();
+        for (int i = 0; i <= words.length - nGramSize; i++) {
+            StringBuilder sb = new StringBuilder();
+            for (int j = 0; j < nGramSize; j++) {
+                sb.append(words[i + j]);
+                if (j != nGramSize - 1) sb.append(" ");
             }
-        };
-
-        // Start background thread to remove expired entries every second
-        ScheduledExecutorService cleaner = Executors.newSingleThreadScheduledExecutor();
-        cleaner.scheduleAtFixedRate(this::cleanExpiredEntries, 1, 1, TimeUnit.SECONDS);
+            nGrams.add(sb.toString());
+        }
+        return nGrams;
     }
 
-    private void cleanExpiredEntries() {
-        Iterator<Map.Entry<String, DNSEntry>> iterator = cache.entrySet().iterator();
-        while (iterator.hasNext()) {
-            Map.Entry<String, DNSEntry> entry = iterator.next();
-            if (entry.getValue().isExpired()) {
-                iterator.remove();
+    // Analyze a document against existing documents
+    public void analyzeDocument(String docId, String content) {
+        List<String> nGrams = extractNGrams(content);
+        Map<String, Integer> matches = new HashMap<>();
+
+        for (String nGram : nGrams) {
+            Set<String> docs = nGramMap.getOrDefault(nGram, new HashSet<>());
+            for (String existingDoc : docs) {
+                matches.put(existingDoc, matches.getOrDefault(existingDoc, 0) + 1);
             }
-        }
-    }
-
-    // Simulated upstream DNS query
-    private String queryUpstream(String domain) {
-        // In reality, would perform DNS lookup
-        return "172.217." + new Random().nextInt(255) + "." + new Random().nextInt(255);
-    }
-
-    public String resolve(String domain, int ttlSeconds) {
-        DNSEntry entry = cache.get(domain);
-
-        if (entry != null && !entry.isExpired()) {
-            hits++;
-            return "Cache HIT → " + entry.ipAddress;
+            docs.add(docId);
+            nGramMap.put(nGram, docs);
         }
 
-        misses++;
-        String ip = queryUpstream(domain);
-        cache.put(domain, new DNSEntry(domain, ip, ttlSeconds));
-        return "Cache MISS → Query upstream → " + ip + " (TTL: " + ttlSeconds + "s)";
-    }
+        System.out.println("Document: " + docId);
+        System.out.println("Extracted n-grams: " + nGrams.size());
 
-    public void getCacheStats() {
-        int total = hits + misses;
-        double hitRate = total == 0 ? 0 : (hits * 100.0 / total);
-        System.out.printf("Cache Stats → Hits: %d, Misses: %d, Hit Rate: %.2f%%\n", hits, misses, hitRate);
-    }
-
-    public void displayCache() {
-        System.out.println("\n--- Current Cache Entries ---");
-        for (Map.Entry<String, DNSEntry> e : cache.entrySet()) {
-            System.out.println(e.getKey() + " → " + e.getValue().ipAddress + " (expires in " +
-                    ((e.getValue().expiryTime - System.currentTimeMillis()) / 1000) + "s)");
+        if (matches.isEmpty()) {
+            System.out.println("No matches found.\n");
+            return;
         }
+
+        for (Map.Entry<String, Integer> entry : matches.entrySet()) {
+            double similarity = (entry.getValue() * 100.0) / nGrams.size();
+            String status = similarity > 50 ? "PLAGIARISM DETECTED" : "suspicious";
+            System.out.printf("Matches with %s → %d n-grams → Similarity: %.1f%% (%s)\n",
+                    entry.getKey(), entry.getValue(), similarity, status);
+        }
+        System.out.println();
     }
 }
 
@@ -99,29 +72,23 @@ class DNSCache {
 
 public class Main {
 
-    public static void main(String[] args) throws InterruptedException {
+    public static void main(String[] args) {
 
         System.out.println("===============================================");
-        System.out.println("DNS Cache Resolver System");
+        System.out.println("Plagiarism Detection System");
         System.out.println("Version 1.0");
         System.out.println("===============================================");
 
-        DNSCache dnsCache = new DNSCache(3); // max 3 entries
+        PlagiarismDetector detector = new PlagiarismDetector(5); // 5-grams
 
-        System.out.println(dnsCache.resolve("google.com", 5));
-        System.out.println(dnsCache.resolve("facebook.com", 5));
-        System.out.println(dnsCache.resolve("youtube.com", 5));
+        // Sample documents
+        String doc1 = "The quick brown fox jumps over the lazy dog";
+        String doc2 = "A quick brown fox jumped over the lazy dog in the park";
+        String doc3 = "An entirely different document with unique words";
 
-        Thread.sleep(1000);
-        System.out.println(dnsCache.resolve("google.com", 5)); // should be HIT
-
-        Thread.sleep(6000); // wait for TTL to expire
-        System.out.println(dnsCache.resolve("google.com", 5)); // MISS due to expiration
-
-        System.out.println(dnsCache.resolve("twitter.com", 5)); // triggers LRU eviction if full
-
-        dnsCache.displayCache();
-        dnsCache.getCacheStats();
-        System.out.println("===============================================");
+        // Analyze documents sequentially
+        detector.analyzeDocument("essay_001.txt", doc1);
+        detector.analyzeDocument("essay_002.txt", doc2);
+        detector.analyzeDocument("essay_003.txt", doc3);
     }
 }
