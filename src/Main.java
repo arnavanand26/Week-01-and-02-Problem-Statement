@@ -1,68 +1,87 @@
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Real-Time Website Analytics Dashboard
+ * Distributed Rate Limiter for API Gateway
  * Version: 1.0
  *
  * Features:
- * - Tracks page views and unique visitors
- * - Tracks traffic sources
- * - Maintains top 10 pages
- * - Simulates real-time updates every 5 seconds
+ * - Token bucket per client
+ * - Burst handling up to max tokens
+ * - Automatic refill over time
+ * - Denies requests when limit exceeded
  */
 
-class AnalyticsDashboard {
+class TokenBucket {
+    private final int maxTokens;
+    private final long refillIntervalMs; // refill interval in ms
+    private AtomicInteger tokens;
+    private long lastRefillTime;
 
-    private Map<String, Integer> pageViews;
-    private Map<String, Set<String>> uniqueVisitors;
-    private Map<String, Integer> trafficSources;
-
-    public AnalyticsDashboard() {
-        pageViews = new HashMap<>();
-        uniqueVisitors = new HashMap<>();
-        trafficSources = new HashMap<>();
+    public TokenBucket(int maxTokens, long refillIntervalMs) {
+        this.maxTokens = maxTokens;
+        this.refillIntervalMs = refillIntervalMs;
+        this.tokens = new AtomicInteger(maxTokens);
+        this.lastRefillTime = System.currentTimeMillis();
     }
 
-    // Process a single page view event
-    public void processEvent(String url, String userId, String source) {
-        pageViews.put(url, pageViews.getOrDefault(url, 0) + 1);
-
-        uniqueVisitors.putIfAbsent(url, new HashSet<>());
-        uniqueVisitors.get(url).add(userId);
-
-        trafficSources.put(source, trafficSources.getOrDefault(source, 0) + 1);
-    }
-
-    // Display top N pages by total views
-    public void displayTopPages(int topN) {
-        System.out.println("\nTop Pages:");
-
-        pageViews.entrySet().stream()
-                .sorted((a, b) -> b.getValue().compareTo(a.getValue()))
-                .limit(topN)
-                .forEach(e -> {
-                    String url = e.getKey();
-                    int views = e.getValue();
-                    int unique = uniqueVisitors.get(url).size();
-                    System.out.println(url + " - " + views + " views (" + unique + " unique)");
-                });
-    }
-
-    // Display traffic sources
-    public void displayTrafficSources() {
-        System.out.println("\nTraffic Sources:");
-        int total = trafficSources.values().stream().mapToInt(Integer::intValue).sum();
-        for (Map.Entry<String, Integer> entry : trafficSources.entrySet()) {
-            double percent = total == 0 ? 0 : (entry.getValue() * 100.0 / total);
-            System.out.printf("%s: %.0f%%\n", entry.getKey(), percent);
+    // synchronized to prevent race conditions
+    public synchronized boolean allowRequest() {
+        refillTokens();
+        if (tokens.get() > 0) {
+            tokens.decrementAndGet();
+            return true;
+        } else {
+            return false;
         }
     }
 
-    // Display dashboard
-    public void displayDashboard(int topN) {
-        displayTopPages(topN);
-        displayTrafficSources();
+    private void refillTokens() {
+        long now = System.currentTimeMillis();
+        long elapsed = now - lastRefillTime;
+        if (elapsed >= refillIntervalMs) {
+            tokens.set(maxTokens);
+            lastRefillTime = now;
+        }
+    }
+
+    public int getRemainingTokens() {
+        refillTokens();
+        return tokens.get();
+    }
+}
+
+class RateLimiter {
+    private Map<String, TokenBucket> clientBuckets;
+    private final int maxRequestsPerHour;
+
+    public RateLimiter(int maxRequestsPerHour) {
+        clientBuckets = new HashMap<>();
+        this.maxRequestsPerHour = maxRequestsPerHour;
+    }
+
+    public String checkRateLimit(String clientId) {
+        TokenBucket bucket = clientBuckets.get(clientId);
+        if (bucket == null) {
+            bucket = new TokenBucket(maxRequestsPerHour, 3600 * 1000); // 1 hour refill
+            clientBuckets.put(clientId, bucket);
+        }
+
+        if (bucket.allowRequest()) {
+            return "Allowed (" + bucket.getRemainingTokens() + " requests remaining)";
+        } else {
+            return "Denied (0 requests remaining, retry after 3600s)";
+        }
+    }
+
+    public String getRateLimitStatus(String clientId) {
+        TokenBucket bucket = clientBuckets.get(clientId);
+        if (bucket == null) {
+            return "{used: 0, limit: " + maxRequestsPerHour + ", reset: 3600}";
+        }
+        int used = maxRequestsPerHour - bucket.getRemainingTokens();
+        return "{used: " + used + ", limit: " + maxRequestsPerHour + ", reset: 3600}";
     }
 }
 
@@ -73,31 +92,25 @@ public class Main {
     public static void main(String[] args) throws InterruptedException {
 
         System.out.println("===============================================");
-        System.out.println("Real-Time Website Analytics Dashboard");
+        System.out.println("Distributed API Rate Limiter");
         System.out.println("Version 1.0");
         System.out.println("===============================================");
 
-        AnalyticsDashboard dashboard = new AnalyticsDashboard();
+        RateLimiter limiter = new RateLimiter(5); // 5 requests per hour (demo)
 
-        // Simulated incoming events
-        String[][] events = {
-                {"/article/breaking-news", "user_123", "google"},
-                {"/article/breaking-news", "user_456", "facebook"},
-                {"/sports/championship", "user_123", "direct"},
-                {"/article/breaking-news", "user_789", "google"},
-                {"/sports/championship", "user_222", "facebook"},
-                {"/tech/new-gadget", "user_333", "google"},
-                {"/article/breaking-news", "user_101", "direct"}
-        };
+        String clientId = "abc123";
 
-        // Process events
-        for (String[] event : events) {
-            dashboard.processEvent(event[0], event[1], event[2]);
+        for (int i = 1; i <= 7; i++) {
+            System.out.println("Request " + i + ": " + limiter.checkRateLimit(clientId));
         }
 
-        // Display dashboard (top 10 pages)
-        dashboard.displayDashboard(10);
+        System.out.println("Rate Limit Status: " + limiter.getRateLimitStatus(clientId));
 
-        System.out.println("===============================================");
+        // Simulate waiting for refill
+        System.out.println("\nWaiting 1 second for refill simulation...");
+        Thread.sleep(1000);
+
+        System.out.println("Request after refill: " + limiter.checkRateLimit(clientId));
+        System.out.println("Rate Limit Status: " + limiter.getRateLimitStatus(clientId));
     }
 }
