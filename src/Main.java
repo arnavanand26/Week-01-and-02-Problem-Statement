@@ -1,70 +1,68 @@
 import java.util.*;
+import java.util.concurrent.*;
 
 /**
- * Plagiarism Detection System
+ * Real-Time Website Analytics Dashboard
  * Version: 1.0
  *
  * Features:
- * - Breaks documents into n-grams
- * - Maps n-grams to documents using HashMap
- * - Calculates similarity percentages
- * - Detects potential plagiarism
+ * - Tracks page views and unique visitors
+ * - Tracks traffic sources
+ * - Maintains top 10 pages
+ * - Simulates real-time updates every 5 seconds
  */
 
-class PlagiarismDetector {
+class AnalyticsDashboard {
 
-    private int nGramSize;
-    private Map<String, Set<String>> nGramMap; // n-gram -> document IDs
+    private Map<String, Integer> pageViews;
+    private Map<String, Set<String>> uniqueVisitors;
+    private Map<String, Integer> trafficSources;
 
-    public PlagiarismDetector(int nGramSize) {
-        this.nGramSize = nGramSize;
-        nGramMap = new HashMap<>();
+    public AnalyticsDashboard() {
+        pageViews = new HashMap<>();
+        uniqueVisitors = new HashMap<>();
+        trafficSources = new HashMap<>();
     }
 
-    // Extract n-grams from document
-    private List<String> extractNGrams(String content) {
-        String[] words = content.split("\\s+");
-        List<String> nGrams = new ArrayList<>();
-        for (int i = 0; i <= words.length - nGramSize; i++) {
-            StringBuilder sb = new StringBuilder();
-            for (int j = 0; j < nGramSize; j++) {
-                sb.append(words[i + j]);
-                if (j != nGramSize - 1) sb.append(" ");
-            }
-            nGrams.add(sb.toString());
-        }
-        return nGrams;
+    // Process a single page view event
+    public void processEvent(String url, String userId, String source) {
+        pageViews.put(url, pageViews.getOrDefault(url, 0) + 1);
+
+        uniqueVisitors.putIfAbsent(url, new HashSet<>());
+        uniqueVisitors.get(url).add(userId);
+
+        trafficSources.put(source, trafficSources.getOrDefault(source, 0) + 1);
     }
 
-    // Analyze a document against existing documents
-    public void analyzeDocument(String docId, String content) {
-        List<String> nGrams = extractNGrams(content);
-        Map<String, Integer> matches = new HashMap<>();
+    // Display top N pages by total views
+    public void displayTopPages(int topN) {
+        System.out.println("\nTop Pages:");
 
-        for (String nGram : nGrams) {
-            Set<String> docs = nGramMap.getOrDefault(nGram, new HashSet<>());
-            for (String existingDoc : docs) {
-                matches.put(existingDoc, matches.getOrDefault(existingDoc, 0) + 1);
-            }
-            docs.add(docId);
-            nGramMap.put(nGram, docs);
+        pageViews.entrySet().stream()
+                .sorted((a, b) -> b.getValue().compareTo(a.getValue()))
+                .limit(topN)
+                .forEach(e -> {
+                    String url = e.getKey();
+                    int views = e.getValue();
+                    int unique = uniqueVisitors.get(url).size();
+                    System.out.println(url + " - " + views + " views (" + unique + " unique)");
+                });
+    }
+
+    // Display traffic sources
+    public void displayTrafficSources() {
+        System.out.println("\nTraffic Sources:");
+        int total = trafficSources.values().stream().mapToInt(Integer::intValue).sum();
+        for (Map.Entry<String, Integer> entry : trafficSources.entrySet()) {
+            double percent = total == 0 ? 0 : (entry.getValue() * 100.0 / total);
+            System.out.printf("%s: %.0f%%\n", entry.getKey(), percent);
         }
+    }
 
-        System.out.println("Document: " + docId);
-        System.out.println("Extracted n-grams: " + nGrams.size());
-
-        if (matches.isEmpty()) {
-            System.out.println("No matches found.\n");
-            return;
-        }
-
-        for (Map.Entry<String, Integer> entry : matches.entrySet()) {
-            double similarity = (entry.getValue() * 100.0) / nGrams.size();
-            String status = similarity > 50 ? "PLAGIARISM DETECTED" : "suspicious";
-            System.out.printf("Matches with %s → %d n-grams → Similarity: %.1f%% (%s)\n",
-                    entry.getKey(), entry.getValue(), similarity, status);
-        }
-        System.out.println();
+    // Display dashboard
+    public void displayDashboard(int topN) {
+        displayTopPages(topN);
+        displayTrafficSources();
     }
 }
 
@@ -72,23 +70,34 @@ class PlagiarismDetector {
 
 public class Main {
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws InterruptedException {
 
         System.out.println("===============================================");
-        System.out.println("Plagiarism Detection System");
+        System.out.println("Real-Time Website Analytics Dashboard");
         System.out.println("Version 1.0");
         System.out.println("===============================================");
 
-        PlagiarismDetector detector = new PlagiarismDetector(5); // 5-grams
+        AnalyticsDashboard dashboard = new AnalyticsDashboard();
 
-        // Sample documents
-        String doc1 = "The quick brown fox jumps over the lazy dog";
-        String doc2 = "A quick brown fox jumped over the lazy dog in the park";
-        String doc3 = "An entirely different document with unique words";
+        // Simulated incoming events
+        String[][] events = {
+                {"/article/breaking-news", "user_123", "google"},
+                {"/article/breaking-news", "user_456", "facebook"},
+                {"/sports/championship", "user_123", "direct"},
+                {"/article/breaking-news", "user_789", "google"},
+                {"/sports/championship", "user_222", "facebook"},
+                {"/tech/new-gadget", "user_333", "google"},
+                {"/article/breaking-news", "user_101", "direct"}
+        };
 
-        // Analyze documents sequentially
-        detector.analyzeDocument("essay_001.txt", doc1);
-        detector.analyzeDocument("essay_002.txt", doc2);
-        detector.analyzeDocument("essay_003.txt", doc3);
+        // Process events
+        for (String[] event : events) {
+            dashboard.processEvent(event[0], event[1], event[2]);
+        }
+
+        // Display dashboard (top 10 pages)
+        dashboard.displayDashboard(10);
+
+        System.out.println("===============================================");
     }
 }
