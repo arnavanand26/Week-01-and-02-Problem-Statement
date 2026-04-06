@@ -1,85 +1,68 @@
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Social Media Username Availability Checker
+ * E-commerce Flash Sale Inventory Manager
+ * Version: 1.0
  *
  * Features:
- * - O(1) username lookup using HashMap
- * - Tracks username attempt frequency
- * - Suggests alternative usernames
- * - Retrieves most attempted username
+ * - Real-time stock tracking
+ * - O(1) stock lookup
+ * - Thread-safe purchase operations
+ * - FIFO waiting list
  */
+class InventoryManager {
 
-class UsernameService {
+    // productId -> stock count
+    private Map<String, AtomicInteger> stockMap;
 
-    // username -> userId (simulating registered users)
-    private Map<String, Integer> registeredUsers;
+    // productId -> waiting list (userIds in FIFO order)
+    private Map<String, LinkedHashMap<Integer, Integer>> waitingListMap;
 
-    // username -> attempt count
-    private Map<String, Integer> attemptFrequency;
-
-    public UsernameService() {
-        registeredUsers = new HashMap<>();
-        attemptFrequency = new HashMap<>();
+    public InventoryManager() {
+        stockMap = new HashMap<>();
+        waitingListMap = new HashMap<>();
     }
 
-    // Simulate existing users
-    public void registerUser(String username, int userId) {
-        registeredUsers.put(username, userId);
+    // Initialize product stock
+    public void addProduct(String productId, int stockCount) {
+        stockMap.put(productId, new AtomicInteger(stockCount));
+        waitingListMap.put(productId, new LinkedHashMap<>());
     }
 
-    // O(1) availability check
-    public boolean checkAvailability(String username) {
-
-        // Track frequency
-        attemptFrequency.put(username,
-                attemptFrequency.getOrDefault(username, 0) + 1);
-
-        return !registeredUsers.containsKey(username);
+    // Check stock in O(1)
+    public int checkStock(String productId) {
+        AtomicInteger stock = stockMap.get(productId);
+        return stock != null ? stock.get() : 0;
     }
 
-    // Suggest alternatives if taken
-    public List<String> suggestAlternatives(String username) {
+    // Attempt purchase (thread-safe)
+    public synchronized String purchaseItem(String productId, int userId) {
+        AtomicInteger stock = stockMap.get(productId);
+        LinkedHashMap<Integer, Integer> waitingList = waitingListMap.get(productId);
 
-        List<String> suggestions = new ArrayList<>();
+        if (stock == null) return "Product not found";
 
-        if (!registeredUsers.containsKey(username)) {
-            suggestions.add(username);
-            return suggestions;
-        }
-
-        // Append numbers
-        for (int i = 1; i <= 3; i++) {
-            String suggestion = username + i;
-            if (!registeredUsers.containsKey(suggestion)) {
-                suggestions.add(suggestion);
+        if (stock.get() > 0) {
+            stock.decrementAndGet();
+            return "Success: " + stock.get() + " units remaining";
+        } else {
+            // Add to waiting list FIFO
+            if (!waitingList.containsKey(userId)) {
+                waitingList.put(userId, waitingList.size() + 1);
             }
+            int position = waitingList.get(userId);
+            return "Added to waiting list, position #" + position;
         }
-
-        // Replace underscore with dot (if exists)
-        if (username.contains("_")) {
-            String modified = username.replace("_", ".");
-            if (!registeredUsers.containsKey(modified)) {
-                suggestions.add(modified);
-            }
-        }
-
-        return suggestions;
     }
 
-    // Get most attempted username
-    public String getMostAttempted() {
-        String mostAttempted = null;
-        int max = 0;
-
-        for (Map.Entry<String, Integer> entry : attemptFrequency.entrySet()) {
-            if (entry.getValue() > max) {
-                max = entry.getValue();
-                mostAttempted = entry.getKey();
-            }
+    // Display waiting list for product
+    public void displayWaitingList(String productId) {
+        LinkedHashMap<Integer, Integer> waitingList = waitingListMap.get(productId);
+        System.out.println("\nWaiting List for " + productId + ":");
+        for (Map.Entry<Integer, Integer> entry : waitingList.entrySet()) {
+            System.out.println("UserId: " + entry.getKey() + " → Position #" + entry.getValue());
         }
-
-        return mostAttempted + " (" + max + " attempts)";
     }
 }
 
@@ -89,32 +72,24 @@ public class Main {
 
     public static void main(String[] args) {
 
-        UsernameService service = new UsernameService();
+        InventoryManager manager = new InventoryManager();
 
-        // Simulated existing users
-        service.registerUser("john_doe", 101);
-        service.registerUser("admin", 1);
-        service.registerUser("guest", 102);
+        String productId = "IPHONE15_256GB";
+        manager.addProduct(productId, 5); // simulate 5 units for testing
 
-        System.out.println("Check Availability:");
+        System.out.println("Initial Stock: " + manager.checkStock(productId));
 
-        System.out.println("john_doe → " +
-                service.checkAvailability("john_doe"));
+        // Simulate multiple users purchasing
+        int[] userIds = {12345, 67890, 11111, 22222, 33333, 44444};
 
-        System.out.println("jane_smith → " +
-                service.checkAvailability("jane_smith"));
+        for (int userId : userIds) {
+            String result = manager.purchaseItem(productId, userId);
+            System.out.println("User " + userId + ": " + result);
+        }
 
-        // Simulate multiple attempts for popularity tracking
-        for (int i = 0; i < 5; i++)
-            service.checkAvailability("admin");
+        // Display waiting list
+        manager.displayWaitingList(productId);
 
-        for (int i = 0; i < 3; i++)
-            service.checkAvailability("john_doe");
-
-        System.out.println("\nSuggestions for 'john_doe':");
-        System.out.println(service.suggestAlternatives("john_doe"));
-
-        System.out.println("\nMost Attempted Username:");
-        System.out.println(service.getMostAttempted());
+        System.out.println("\nFinal Stock: " + manager.checkStock(productId));
     }
 }
